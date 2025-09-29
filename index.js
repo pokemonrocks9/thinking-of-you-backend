@@ -1,12 +1,12 @@
-// Simple backend API for Thinking of You app
 const express = require('express');
 const cors = require('cors');
+const https = require('https');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// In-memory storage
+// Structure: { linkCode: { name1: "Alice", token1: "...", name2: "Bob", token2: "...", pendingPings: [] } }
 const connections = {};
 
 // Clean up old pings every 5 minutes
@@ -21,9 +21,49 @@ setInterval(() => {
   });
 }, 300000);
 
-// Register a device with a link code
+// Send Timeline pin to Pebble
+function sendTimelinePin(token, senderName) {
+  const pinId = 'ping-' + Date.now();
+  const pin = {
+    id: pinId,
+    time: new Date().toISOString(),
+    layout: {
+      type: 'genericPin',
+      title: senderName,
+      subtitle: 'is thinking about you!',
+      tinyIcon: 'system://images/NOTIFICATION_REMINDER',
+      backgroundColor: '#FF0055'
+    }
+  };
+
+  const postData = JSON.stringify(pin);
+  const options = {
+    hostname: 'timeline-api.rebble.io',
+    port: 443,
+    path: `/v1/user/pins/${pinId}`,
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Token': token,
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    console.log(`Timeline pin sent. Status: ${res.statusCode}`);
+  });
+
+  req.on('error', (e) => {
+    console.error(`Timeline pin failed: ${e.message}`);
+  });
+
+  req.write(postData);
+  req.end();
+}
+
+// Register a device with a link code and timeline token
 app.post('/api/register', (req, res) => {
-  const { linkCode, name } = req.body;
+  const { linkCode, name, timelineToken } = req.body;
   
   if (!linkCode || !name) {
     return res.status(400).json({ error: 'Link code and name are required' });
@@ -32,16 +72,21 @@ app.post('/api/register', (req, res) => {
   if (!connections[linkCode]) {
     connections[linkCode] = {
       name1: name,
+      token1: timelineToken || null,
       name2: null,
+      token2: null,
       pendingPings: []
     };
   } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
     connections[linkCode].name2 = name;
-  } else if (connections[linkCode].name1 === name || connections[linkCode].name2 === name) {
-    console.log(`User ${name} re-registered for ${linkCode}`);
+    connections[linkCode].token2 = timelineToken || null;
+  } else if (connections[linkCode].name1 === name) {
+    connections[linkCode].token1 = timelineToken || null;
+  } else if (connections[linkCode].name2 === name) {
+    connections[linkCode].token2 = timelineToken || null;
   }
   
-  console.log(`Registered: ${name} with code ${linkCode}`);
+  console.log(`Registered: ${name} with code ${linkCode}, token: ${timelineToken ? 'yes' : 'no'}`);
   res.json({ 
     success: true,
     connected: connections[linkCode].name2 !== null
@@ -60,16 +105,33 @@ app.post('/api/ping', (req, res) => {
     return res.status(404).json({ error: 'Connection not found' });
   }
   
+  // Add to pending pings (for active polling)
   connections[linkCode].pendingPings.push({
     senderName: senderName,
     timestamp: Date.now()
   });
   
-  console.log(`Ping sent from ${senderName} on ${linkCode}`);
+  // Send Timeline pin to partner
+  const conn = connections[linkCode];
+  let partnerToken = null;
+  
+  if (conn.name1 === senderName && conn.token2) {
+    partnerToken = conn.token2;
+  } else if (conn.name2 === senderName && conn.token1) {
+    partnerToken = conn.token1;
+  }
+  
+  if (partnerToken) {
+    sendTimelinePin(partnerToken, senderName);
+    console.log(`Ping sent from ${senderName}, Timeline notification sent`);
+  } else {
+    console.log(`Ping sent from ${senderName}, no Timeline token for partner`);
+  }
+  
   res.json({ success: true });
 });
 
-// Check for incoming pings
+// Check for incoming pings (for active polling)
 app.get('/api/check', (req, res) => {
   const { linkCode } = req.query;
   

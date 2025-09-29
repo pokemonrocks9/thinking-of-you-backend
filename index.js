@@ -6,10 +6,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Structure: { linkCode: { name1: "Alice", token1: "...", name2: "Bob", token2: "...", pendingPings: [] } }
 const connections = {};
 
-// Clean up old pings every 5 minutes
 setInterval(() => {
   const now = Date.now();
   Object.keys(connections).forEach(linkCode => {
@@ -21,7 +19,6 @@ setInterval(() => {
   });
 }, 300000);
 
-// Send Timeline pin to Pebble
 function sendTimelinePin(token, senderName) {
   const pinId = 'ping-' + Date.now();
   const pin = {
@@ -61,39 +58,6 @@ function sendTimelinePin(token, senderName) {
   req.end();
 }
 
-// Register a device with a link code and timeline token
-app.post('/api/register', (req, res) => {
-  const { linkCode, name, timelineToken } = req.body;
-  
-  if (!linkCode || !name) {
-    return res.status(400).json({ error: 'Link code and name are required' });
-  }
-  
-  if (!connections[linkCode]) {
-    connections[linkCode] = {
-      name1: name,
-      token1: timelineToken || null,
-      name2: null,
-      token2: null,
-      pendingPings: []
-    };
-  } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
-    connections[linkCode].name2 = name;
-    connections[linkCode].token2 = timelineToken || null;
-  } else if (connections[linkCode].name1 === name) {
-    connections[linkCode].token1 = timelineToken || null;
-  } else if (connections[linkCode].name2 === name) {
-    connections[linkCode].token2 = timelineToken || null;
-  }
-  
-  console.log(`Registered: ${name} with code ${linkCode}, token: ${timelineToken ? 'yes' : 'no'}`);
-  res.json({ 
-    success: true,
-    connected: connections[linkCode].name2 !== null
-  });
-});
-
-// Send a ping
 app.post('/api/register', (req, res) => {
   const { linkCode, name, timelineToken } = req.body;
   
@@ -131,10 +95,20 @@ app.post('/api/register', (req, res) => {
     connected: connections[linkCode].name2 !== null
   });
 });
+
+app.post('/api/ping', (req, res) => {
+  const { linkCode, senderName } = req.body;
+  
+  if (!linkCode || !senderName) {
+    return res.status(400).json({ error: 'Link code and sender name are required' });
+  }
+  
+  if (!connections[linkCode]) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
   
   const conn = connections[linkCode];
   
-  // Determine partner's name and token
   let partnerName = null;
   let partnerToken = null;
   
@@ -146,7 +120,6 @@ app.post('/api/register', (req, res) => {
     partnerToken = conn.token1;
   }
   
-  // Only add to pending pings if there's a partner
   if (partnerName) {
     connections[linkCode].pendingPings.push({
       senderName: senderName,
@@ -154,7 +127,6 @@ app.post('/api/register', (req, res) => {
     });
   }
   
-  // Send Timeline pin ONLY to partner, not sender
   if (partnerToken && partnerName) {
     sendTimelinePin(partnerToken, senderName);
     console.log(`Ping sent from ${senderName} to ${partnerName}, Timeline notification sent`);
@@ -165,7 +137,6 @@ app.post('/api/register', (req, res) => {
   res.json({ success: true });
 });
 
-// Check for incoming pings (for active polling)
 app.get('/api/check', (req, res) => {
   const { linkCode } = req.query;
   
@@ -186,7 +157,6 @@ app.get('/api/check', (req, res) => {
   res.json({ hasPing });
 });
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok',

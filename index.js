@@ -94,16 +94,43 @@ app.post('/api/register', (req, res) => {
 });
 
 // Send a ping
-app.post('/api/ping', (req, res) => {
-  const { linkCode, senderName } = req.body;
+app.post('/api/register', (req, res) => {
+  const { linkCode, name, timelineToken } = req.body;
   
-  if (!linkCode || !senderName) {
-    return res.status(400).json({ error: 'Link code and sender name are required' });
+  if (!linkCode || !name) {
+    return res.status(400).json({ error: 'Link code and name are required' });
   }
+  
+  console.log(`Register request: linkCode=${linkCode}, name="${name}", token=${timelineToken ? 'yes' : 'no'}`);
   
   if (!connections[linkCode]) {
-    return res.status(404).json({ error: 'Connection not found' });
+    connections[linkCode] = {
+      name1: name,
+      token1: timelineToken || null,
+      name2: null,
+      token2: null,
+      pendingPings: []
+    };
+    console.log(`Created new connection: name1="${connections[linkCode].name1}"`);
+  } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
+    connections[linkCode].name2 = name;
+    connections[linkCode].token2 = timelineToken || null;
+    console.log(`Added partner: name2="${connections[linkCode].name2}"`);
+  } else if (connections[linkCode].name1 === name) {
+    connections[linkCode].token1 = timelineToken || null;
+    console.log(`Updated name1 token`);
+  } else if (connections[linkCode].name2 === name) {
+    connections[linkCode].token2 = timelineToken || null;
+    console.log(`Updated name2 token`);
   }
+  
+  console.log(`Connection state: name1="${connections[linkCode].name1}", name2="${connections[linkCode].name2}"`);
+  
+  res.json({ 
+    success: true,
+    connected: connections[linkCode].name2 !== null
+  });
+});
   
   const conn = connections[linkCode];
   

@@ -105,27 +105,34 @@ app.post('/api/ping', (req, res) => {
     return res.status(404).json({ error: 'Connection not found' });
   }
   
-  // Add to pending pings (for active polling)
-  connections[linkCode].pendingPings.push({
-    senderName: senderName,
-    timestamp: Date.now()
-  });
-  
-  // Send Timeline pin to partner
   const conn = connections[linkCode];
+  
+  // Determine partner's name and token
+  let partnerName = null;
   let partnerToken = null;
   
-  if (conn.name1 === senderName && conn.token2) {
+  if (conn.name1 === senderName) {
+    partnerName = conn.name2;
     partnerToken = conn.token2;
-  } else if (conn.name2 === senderName && conn.token1) {
+  } else if (conn.name2 === senderName) {
+    partnerName = conn.name1;
     partnerToken = conn.token1;
   }
   
-  if (partnerToken) {
+  // Only add to pending pings if there's a partner
+  if (partnerName) {
+    connections[linkCode].pendingPings.push({
+      senderName: senderName,
+      timestamp: Date.now()
+    });
+  }
+  
+  // Send Timeline pin ONLY to partner, not sender
+  if (partnerToken && partnerName) {
     sendTimelinePin(partnerToken, senderName);
-    console.log(`Ping sent from ${senderName}, Timeline notification sent`);
+    console.log(`Ping sent from ${senderName} to ${partnerName}, Timeline notification sent`);
   } else {
-    console.log(`Ping sent from ${senderName}, no Timeline token for partner`);
+    console.log(`Ping sent from ${senderName}, no partner or token available`);
   }
   
   res.json({ success: true });

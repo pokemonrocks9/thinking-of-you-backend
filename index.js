@@ -78,6 +78,11 @@ app.post('/api/register', (req, res) => {
     console.log(`Created new connection for ${name}`);
   } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
     connections[linkCode].name2 = name;
+    // Save webhook even if partner provides it
+    if (webhookUrl && !connections[linkCode].webhookUrl) {
+      connections[linkCode].webhookUrl = webhookUrl;
+      console.log(`Partner ${name} provided webhook`);
+    }
     console.log(`Partner joined: ${name}`);
   } else if (connections[linkCode].name1 === name) {
     if (webhookUrl) {
@@ -85,6 +90,10 @@ app.post('/api/register', (req, res) => {
       console.log(`Updated webhook for creator ${name}`);
     }
   } else if (connections[linkCode].name2 === name) {
+    if (webhookUrl && !connections[linkCode].webhookUrl) {
+      connections[linkCode].webhookUrl = webhookUrl;
+      console.log(`Partner ${name} updated webhook`);
+    }
     console.log(`Partner re-registered: ${name}`);
   }
   

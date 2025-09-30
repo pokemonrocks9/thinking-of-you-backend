@@ -66,6 +66,7 @@ app.post('/api/register', (req, res) => {
   }
   
   console.log(`Register request: linkCode=${linkCode}, name="${name}", token=${timelineToken ? 'yes' : 'no'}`);
+  console.log(`Full timeline token for ${name}: ${timelineToken}`);
   
   if (!connections[linkCode]) {
     connections[linkCode] = {
@@ -109,6 +110,11 @@ app.post('/api/ping', (req, res) => {
   
   const conn = connections[linkCode];
   
+  if (!conn.name1 || !conn.name2) {
+    console.log(`Ping rejected from ${senderName} - partner not connected yet`);
+    return res.status(400).json({ error: 'Partner not connected yet' });
+  }
+  
   let partnerName = null;
   let partnerToken = null;
   
@@ -130,8 +136,6 @@ app.post('/api/ping', (req, res) => {
   if (partnerToken && partnerName) {
     sendTimelinePin(partnerToken, senderName);
     console.log(`Ping sent from ${senderName} to ${partnerName}, Timeline notification sent`);
-  } else {
-    console.log(`Ping sent from ${senderName}, no partner or token available`);
   }
   
   res.json({ success: true });

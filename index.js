@@ -19,39 +19,31 @@ setInterval(() => {
   });
 }, 300000);
 
-function sendTimelinePin(token, senderName) {
-  const pinId = 'ping-' + Date.now();
-  const pin = {
-    id: pinId,
-    time: new Date().toISOString(),
-    layout: {
-      type: 'genericPin',
-      title: senderName,
-      subtitle: 'is thinking about you!',
-      tinyIcon: 'system://images/NOTIFICATION_REMINDER',
-      backgroundColor: '#FF0055'
-    }
-  };
+function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
+  const postData = JSON.stringify({
+    content: `💕 **${senderName}** is thinking about **${recipientName}**!`,
+    username: 'Thinking of You',
+    avatar_url: 'https://em-content.zobj.net/thumbs/120/apple/354/red-heart_2764-fe0f.png'
+  });
 
-  const postData = JSON.stringify(pin);
+  const url = new URL(webhookUrl);
   const options = {
-    hostname: 'timeline-api.rebble.io',
+    hostname: url.hostname,
     port: 443,
-    path: `/v1/user/pins/${pinId}`,
-    method: 'PUT',
+    path: url.pathname + url.search,
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Token': token,
       'Content-Length': Buffer.byteLength(postData)
     }
   };
 
   const req = https.request(options, (res) => {
-    console.log(`Timeline pin sent. Status: ${res.statusCode}`);
+    console.log(`Discord webhook sent. Status: ${res.statusCode}`);
   });
 
   req.on('error', (e) => {
-    console.error(`Timeline pin failed: ${e.message}`);
+    console.error(`Discord webhook failed: ${e.message}`);
   });
 
   req.write(postData);
@@ -59,37 +51,31 @@ function sendTimelinePin(token, senderName) {
 }
 
 app.post('/api/register', (req, res) => {
-  const { linkCode, name, timelineToken } = req.body;
+  const { linkCode, name, webhookUrl } = req.body;
   
   if (!linkCode || !name) {
     return res.status(400).json({ error: 'Link code and name are required' });
   }
   
-  console.log(`Register request: linkCode=${linkCode}, name="${name}", token=${timelineToken ? 'yes' : 'no'}`);
-  console.log(`Full timeline token for ${name}: ${timelineToken}`);
+  console.log(`Register: linkCode=${linkCode}, name="${name}", webhook=${webhookUrl ? 'yes' : 'no'}`);
   
   if (!connections[linkCode]) {
     connections[linkCode] = {
       name1: name,
-      token1: timelineToken || null,
       name2: null,
-      token2: null,
+      webhookUrl: webhookUrl || null,
       pendingPings: []
     };
-    console.log(`Created new connection: name1="${connections[linkCode].name1}"`);
+    console.log(`Created connection: ${name}`);
   } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
     connections[linkCode].name2 = name;
-    connections[linkCode].token2 = timelineToken || null;
-    console.log(`Added partner: name2="${connections[linkCode].name2}"`);
+    console.log(`Partner joined: ${name}`);
   } else if (connections[linkCode].name1 === name) {
-    connections[linkCode].token1 = timelineToken || null;
-    console.log(`Updated name1 token`);
+    if (webhookUrl) connections[linkCode].webhookUrl = webhookUrl;
+    console.log(`Updated creator info`);
   } else if (connections[linkCode].name2 === name) {
-    connections[linkCode].token2 = timelineToken || null;
-    console.log(`Updated name2 token`);
+    console.log(`Partner re-registered`);
   }
-  
-  console.log(`Connection state: name1="${connections[linkCode].name1}", name2="${connections[linkCode].name2}"`);
   
   res.json({ 
     success: true,
@@ -111,19 +97,16 @@ app.post('/api/ping', (req, res) => {
   const conn = connections[linkCode];
   
   if (!conn.name1 || !conn.name2) {
-    console.log(`Ping rejected from ${senderName} - partner not connected yet`);
+    console.log(`Ping rejected - partner not connected`);
     return res.status(400).json({ error: 'Partner not connected yet' });
   }
   
   let partnerName = null;
-  let partnerToken = null;
   
   if (conn.name1 === senderName) {
     partnerName = conn.name2;
-    partnerToken = conn.token2;
   } else if (conn.name2 === senderName) {
     partnerName = conn.name1;
-    partnerToken = conn.token1;
   }
   
   if (partnerName) {
@@ -134,9 +117,9 @@ app.post('/api/ping', (req, res) => {
     });
   }
   
-  if (partnerToken && partnerName) {
-    sendTimelinePin(partnerToken, senderName);
-    console.log(`Ping sent from ${senderName} to ${partnerName}, Timeline notification sent`);
+  if (conn.webhookUrl && partnerName) {
+    sendDiscordWebhook(conn.webhookUrl, senderName);
+    console.log(`Discord sent from ${senderName} to ${partnerName}`);
   }
   
   res.json({ success: true });

@@ -109,23 +109,19 @@ app.post('/api/ping', (req, res) => {
   const { linkCode, senderName } = req.body;
   
   console.log('=== PING REQUEST ===');
-  console.log(`linkCode: ${linkCode}`);
-  console.log(`senderName: ${senderName}`);
+  console.log(`linkCode: ${linkCode}, senderName: ${senderName}`);
   
   if (!linkCode || !senderName) {
     return res.status(400).json({ error: 'Link code and sender name are required' });
   }
   
   if (!connections[linkCode]) {
-    console.log('ERROR: Connection not found');
     return res.status(404).json({ error: 'Connection not found' });
   }
   
   const conn = connections[linkCode];
-  console.log(`Connection: name1=${conn.name1}, name2=${conn.name2}, webhook=${conn.webhookUrl ? 'SET' : 'NOT SET'}`);
   
   if (!conn.name1 || !conn.name2) {
-    console.log('ERROR: Partner not connected yet');
     return res.status(400).json({ error: 'Partner not connected yet' });
   }
   
@@ -137,23 +133,22 @@ app.post('/api/ping', (req, res) => {
     partnerName = conn.name1;
   }
   
-  console.log(`Determined partner: ${partnerName}`);
-  
   if (partnerName) {
+    // Add to pending pings for immediate in-app delivery
     connections[linkCode].pendingPings.push({
       senderName: senderName,
       recipientName: partnerName,
       timestamp: Date.now()
     });
-    console.log('Added to pendingPings for in-app delivery');
-  }
-  
-  if (conn.webhookUrl && partnerName) {
-    console.log('Webhook URL exists, attempting to send...');
-    sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
-  } else {
-    if (!conn.webhookUrl) console.log('WARNING: No webhook URL configured');
-    if (!partnerName) console.log('WARNING: No partner name determined');
+    console.log('Added to pendingPings');
+    
+    // Send Discord after 30 second delay as failsafe
+    if (conn.webhookUrl) {
+      setTimeout(() => {
+        sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
+        console.log('Discord failsafe sent after delay');
+      }, 30000); // 30 second delay
+    }
   }
   
   res.json({ success: true });

@@ -147,7 +147,7 @@ app.post('/api/ping', (req, res) => {
       setTimeout(() => {
         sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
         console.log('Discord failsafe sent after delay');
-      }, 30000); // 30 second delay
+      }, 10000); // 30 second delay
     }
   }
   

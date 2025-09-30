@@ -56,11 +56,12 @@ function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
 }
 
 app.post('/api/register', (req, res) => {
-  const { linkCode, name, webhookUrl } = req.body;
+  const { linkCode, name, webhookUrl, oldName } = req.body;
   
   console.log('=== REGISTER REQUEST ===');
   console.log(`linkCode: ${linkCode}`);
   console.log(`name: ${name}`);
+  console.log(`oldName: ${oldName || 'NOT PROVIDED'}`);
   console.log(`webhookUrl: ${webhookUrl ? 'PROVIDED' : 'NOT PROVIDED'}`);
   if (webhookUrl) console.log(`Webhook preview: ${webhookUrl.substring(0, 50)}...`);
   
@@ -68,6 +69,7 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ error: 'Link code and name are required' });
   }
   
+  // Initialize connection if it doesn't exist
   if (!connections[linkCode]) {
     connections[linkCode] = {
       name1: name,
@@ -76,25 +78,46 @@ app.post('/api/register', (req, res) => {
       pendingPings: []
     };
     console.log(`Created new connection for ${name}`);
-  } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
-    connections[linkCode].name2 = name;
-    // Save webhook even if partner provides it
-    if (webhookUrl && !connections[linkCode].webhookUrl) {
-      connections[linkCode].webhookUrl = webhookUrl;
-      console.log(`Partner ${name} provided webhook`);
+  } else {
+    const conn = connections[linkCode];
+    
+    // Check if this is an update (user is changing their name or webhook)
+    if (oldName) {
+      // Update name1 if it matches oldName
+      if (conn.name1 === oldName) {
+        conn.name1 = name;
+        console.log(`Updated name1 from ${oldName} to ${name}`);
+      }
+      // Update name2 if it matches oldName
+      if (conn.name2 === oldName) {
+        conn.name2 = name;
+        console.log(`Updated name2 from ${oldName} to ${name}`);
+      }
     }
-    console.log(`Partner joined: ${name}`);
-  } else if (connections[linkCode].name1 === name) {
+    
+    // Handle webhook updates - always allow overwriting
     if (webhookUrl) {
-      connections[linkCode].webhookUrl = webhookUrl;
-      console.log(`Updated webhook for creator ${name}`);
+      conn.webhookUrl = webhookUrl;
+      console.log(`Updated webhook URL`);
     }
-  } else if (connections[linkCode].name2 === name) {
-    if (webhookUrl && !connections[linkCode].webhookUrl) {
-      connections[linkCode].webhookUrl = webhookUrl;
-      console.log(`Partner ${name} updated webhook`);
+    
+    // If this is a new registration (not an update)
+    if (!oldName) {
+      // Check if user already exists
+      const userExists = conn.name1 === name || conn.name2 === name;
+      
+      if (!userExists) {
+        // New partner joining
+        if (!conn.name2) {
+          conn.name2 = name;
+          console.log(`Partner joined: ${name}`);
+        } else {
+          console.log(`Connection full, but allowing re-registration`);
+        }
+      } else {
+        console.log(`User ${name} re-registered`);
+      }
     }
-    console.log(`Partner re-registered: ${name}`);
   }
   
   console.log(`Connection state: name1=${connections[linkCode].name1}, name2=${connections[linkCode].name2}, webhook=${connections[linkCode].webhookUrl ? 'SET' : 'NOT SET'}`);
@@ -142,12 +165,12 @@ app.post('/api/ping', (req, res) => {
     });
     console.log('Added to pendingPings');
     
-    // Send Discord after 30 second delay as failsafe
+    // Send Discord after 10 second delay as failsafe
     if (conn.webhookUrl) {
       setTimeout(() => {
         sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
         console.log('Discord failsafe sent after delay');
-      }, 10000); // 30 second delay
+      }, 10000);
     }
   }
   

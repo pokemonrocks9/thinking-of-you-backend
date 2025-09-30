@@ -126,16 +126,11 @@ app.post('/api/ping', (req, res) => {
     partnerToken = conn.token1;
   }
   
-  if (partnerName) {
-    connections[linkCode].pendingPings.push({
-      senderName: senderName,
-      timestamp: Date.now()
-    });
-  }
-  
   if (partnerToken && partnerName) {
     sendTimelinePin(partnerToken, senderName);
     console.log(`Ping sent from ${senderName} to ${partnerName}, Timeline notification sent`);
+  } else {
+    console.log(`No Timeline token available for ${partnerName}`);
   }
   
   res.json({ success: true });

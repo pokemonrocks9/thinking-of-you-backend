@@ -203,6 +203,37 @@ app.get('/api/check', (req, res) => {
   res.json({ hasPing });
 });
 
+app.get('/api/whoIsRegistered', (req, res) => {
+  const { linkCode } = req.query;
+  
+  console.log('=== WHO IS REGISTERED REQUEST ===');
+  console.log(`linkCode: ${linkCode}`);
+  
+  if (!linkCode) {
+    return res.status(400).json({ error: 'Link code is required' });
+  }
+  
+  if (!connections[linkCode]) {
+    return res.json({ 
+      registeredNames: [],
+      exists: false 
+    });
+  }
+  
+  const conn = connections[linkCode];
+  const names = [];
+  
+  if (conn.name1) names.push(conn.name1);
+  if (conn.name2) names.push(conn.name2);
+  
+  console.log(`Found registered names: ${names.join(', ')}`);
+  
+  res.json({ 
+    registeredNames: names,
+    exists: true
+  });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok',

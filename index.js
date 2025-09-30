@@ -20,10 +20,12 @@ setInterval(() => {
 }, 300000);
 
 function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
+  console.log(`Attempting Discord webhook: ${senderName} -> ${recipientName}`);
+  console.log(`Webhook URL: ${webhookUrl.substring(0, 50)}...`);
+  
   const postData = JSON.stringify({
-    content: `💕 **${senderName}** is thinking about **${recipientName}**!`,
-    username: 'Thinking of You',
-    avatar_url: 'https://em-content.zobj.net/thumbs/120/apple/354/red-heart_2764-fe0f.png'
+    content: `**${senderName}** is thinking about **${recipientName}**!`,
+    username: 'Thinking of You'
   });
 
   const url = new URL(webhookUrl);
@@ -39,11 +41,14 @@ function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
   };
 
   const req = https.request(options, (res) => {
-    console.log(`Discord webhook sent. Status: ${res.statusCode}`);
+    console.log(`Discord webhook response: ${res.statusCode}`);
+    res.on('data', (chunk) => {
+      console.log(`Discord response body: ${chunk}`);
+    });
   });
 
   req.on('error', (e) => {
-    console.error(`Discord webhook failed: ${e.message}`);
+    console.error(`Discord webhook ERROR: ${e.message}`);
   });
 
   req.write(postData);
@@ -53,11 +58,15 @@ function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
 app.post('/api/register', (req, res) => {
   const { linkCode, name, webhookUrl } = req.body;
   
+  console.log('=== REGISTER REQUEST ===');
+  console.log(`linkCode: ${linkCode}`);
+  console.log(`name: ${name}`);
+  console.log(`webhookUrl: ${webhookUrl ? 'PROVIDED' : 'NOT PROVIDED'}`);
+  if (webhookUrl) console.log(`Webhook preview: ${webhookUrl.substring(0, 50)}...`);
+  
   if (!linkCode || !name) {
     return res.status(400).json({ error: 'Link code and name are required' });
   }
-  
-  console.log(`Register: linkCode=${linkCode}, name="${name}", webhook=${webhookUrl ? 'yes' : 'no'}`);
   
   if (!connections[linkCode]) {
     connections[linkCode] = {
@@ -66,16 +75,20 @@ app.post('/api/register', (req, res) => {
       webhookUrl: webhookUrl || null,
       pendingPings: []
     };
-    console.log(`Created connection: ${name}`);
+    console.log(`Created new connection for ${name}`);
   } else if (!connections[linkCode].name2 && connections[linkCode].name1 !== name) {
     connections[linkCode].name2 = name;
     console.log(`Partner joined: ${name}`);
   } else if (connections[linkCode].name1 === name) {
-    if (webhookUrl) connections[linkCode].webhookUrl = webhookUrl;
-    console.log(`Updated creator info`);
+    if (webhookUrl) {
+      connections[linkCode].webhookUrl = webhookUrl;
+      console.log(`Updated webhook for creator ${name}`);
+    }
   } else if (connections[linkCode].name2 === name) {
-    console.log(`Partner re-registered`);
+    console.log(`Partner re-registered: ${name}`);
   }
+  
+  console.log(`Connection state: name1=${connections[linkCode].name1}, name2=${connections[linkCode].name2}, webhook=${connections[linkCode].webhookUrl ? 'SET' : 'NOT SET'}`);
   
   res.json({ 
     success: true,
@@ -86,18 +99,24 @@ app.post('/api/register', (req, res) => {
 app.post('/api/ping', (req, res) => {
   const { linkCode, senderName } = req.body;
   
+  console.log('=== PING REQUEST ===');
+  console.log(`linkCode: ${linkCode}`);
+  console.log(`senderName: ${senderName}`);
+  
   if (!linkCode || !senderName) {
     return res.status(400).json({ error: 'Link code and sender name are required' });
   }
   
   if (!connections[linkCode]) {
+    console.log('ERROR: Connection not found');
     return res.status(404).json({ error: 'Connection not found' });
   }
   
   const conn = connections[linkCode];
+  console.log(`Connection: name1=${conn.name1}, name2=${conn.name2}, webhook=${conn.webhookUrl ? 'SET' : 'NOT SET'}`);
   
   if (!conn.name1 || !conn.name2) {
-    console.log(`Ping rejected - partner not connected`);
+    console.log('ERROR: Partner not connected yet');
     return res.status(400).json({ error: 'Partner not connected yet' });
   }
   
@@ -109,17 +128,23 @@ app.post('/api/ping', (req, res) => {
     partnerName = conn.name1;
   }
   
+  console.log(`Determined partner: ${partnerName}`);
+  
   if (partnerName) {
     connections[linkCode].pendingPings.push({
       senderName: senderName,
       recipientName: partnerName,
       timestamp: Date.now()
     });
+    console.log('Added to pendingPings for in-app delivery');
   }
   
   if (conn.webhookUrl && partnerName) {
-    sendDiscordWebhook(conn.webhookUrl, senderName);
-    console.log(`Discord sent from ${senderName} to ${partnerName}`);
+    console.log('Webhook URL exists, attempting to send...');
+    sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
+  } else {
+    if (!conn.webhookUrl) console.log('WARNING: No webhook URL configured');
+    if (!partnerName) console.log('WARNING: No partner name determined');
   }
   
   res.json({ success: true });

@@ -75,7 +75,8 @@ app.post('/api/register', (req, res) => {
       name1: name,
       name2: null,
       webhookUrl: webhookUrl || null,
-      pendingPings: []
+      pendingPings: [],
+      jumbledDistance: null  // NEW: Store jumbled distance
     };
     console.log(`Created new connection for ${name}`);
   } else {
@@ -118,6 +119,11 @@ app.post('/api/register', (req, res) => {
         console.log(`User ${name} re-registered`);
       }
     }
+    
+    // Initialize jumbledDistance if it doesn't exist
+    if (!conn.jumbledDistance) {
+      conn.jumbledDistance = null;
+    }
   }
   
   console.log(`Connection state: name1=${connections[linkCode].name1}, name2=${connections[linkCode].name2}, webhook=${connections[linkCode].webhookUrl ? 'SET' : 'NOT SET'}`);
@@ -129,10 +135,11 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/ping', (req, res) => {
-  const { linkCode, senderName } = req.body;
+  const { linkCode, senderName, jumbledCoords } = req.body;
   
   console.log('=== PING REQUEST ===');
   console.log(`linkCode: ${linkCode}, senderName: ${senderName}`);
+  console.log(`jumbledCoords: ${jumbledCoords ? 'PROVIDED (' + jumbledCoords.substring(0, 20) + '...)' : 'NOT PROVIDED'}`);
   
   if (!linkCode || !senderName) {
     return res.status(400).json({ error: 'Link code and sender name are required' });
@@ -157,13 +164,14 @@ app.post('/api/ping', (req, res) => {
   }
   
   if (partnerName) {
-    // Add to pending pings for immediate in-app delivery
+    // Add to pending pings with optional location data
     connections[linkCode].pendingPings.push({
       senderName: senderName,
       recipientName: partnerName,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      jumbledCoords: jumbledCoords || null  // NEW: Store jumbled coordinates
     });
-    console.log('Added to pendingPings');
+    console.log('Added to pendingPings' + (jumbledCoords ? ' with location data' : ''));
     
     // Send Discord after 10 second delay as failsafe
     if (conn.webhookUrl) {
@@ -194,13 +202,66 @@ app.get('/api/check', (req, res) => {
   
   const hasPing = myPings.length > 0;
   
+  // NEW: Include jumbled coordinates if available
+  let jumbledCoords = null;
+  if (hasPing && myPings[0].jumbledCoords) {
+    jumbledCoords = myPings[0].jumbledCoords;
+    console.log('Returning ping with location data');
+  }
+  
   if (hasPing) {
     connections[linkCode].pendingPings = connections[linkCode].pendingPings.filter(
       ping => ping.recipientName !== recipientName
     );
   }
   
-  res.json({ hasPing });
+  res.json({ 
+    hasPing,
+    jumbledCoords: jumbledCoords  // NEW: Return jumbled coordinates
+  });
+});
+
+// NEW: Store jumbled distance
+app.post('/api/distance', (req, res) => {
+  const { linkCode, jumbledDistance } = req.body;
+  
+  console.log('=== STORE DISTANCE REQUEST ===');
+  console.log(`linkCode: ${linkCode}`);
+  console.log(`jumbledDistance: ${jumbledDistance ? jumbledDistance.substring(0, 20) + '...' : 'NOT PROVIDED'}`);
+  
+  if (!linkCode || !jumbledDistance) {
+    return res.status(400).json({ error: 'Link code and jumbled distance are required' });
+  }
+  
+  if (!connections[linkCode]) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+  
+  connections[linkCode].jumbledDistance = jumbledDistance;
+  console.log('Jumbled distance stored successfully');
+  
+  res.json({ success: true });
+});
+
+// NEW: Retrieve jumbled distance
+app.get('/api/distance', (req, res) => {
+  const { linkCode } = req.query;
+  
+  console.log('=== GET DISTANCE REQUEST ===');
+  console.log(`linkCode: ${linkCode}`);
+  
+  if (!linkCode) {
+    return res.status(400).json({ error: 'Link code is required' });
+  }
+  
+  if (!connections[linkCode]) {
+    return res.json({ jumbledDistance: null });
+  }
+  
+  const jumbledDistance = connections[linkCode].jumbledDistance || null;
+  console.log(`Returning jumbledDistance: ${jumbledDistance ? jumbledDistance.substring(0, 20) + '...' : 'NULL'}`);
+  
+  res.json({ jumbledDistance });
 });
 
 app.get('/api/whoIsRegistered', (req, res) => {

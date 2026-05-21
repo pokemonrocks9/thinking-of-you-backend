@@ -19,6 +19,47 @@ setInterval(() => {
   });
 }, 300000);
 
+function pushTimelinePin(token, senderName) {
+  if (!token) return;
+  console.log(`Pushing Timeline Pin to token: ${token.substring(0, 10)}...`);
+
+  const pinId = `ping-${Date.now()}`;
+  const postData = JSON.stringify({
+    id: pinId,
+    time: new Date().toISOString(),
+    layout: {
+      type: 'genericPin',
+      title: senderName,
+      subtitle: 'Thinking of you!',
+      tinyIcon: 'system://images/NOTIFICATION_REMINDER',
+      body: `${senderName} is thinking about you right now.`
+    }
+  });
+
+  const options = {
+    hostname: 'timeline-api.rebble.io',
+    port: 443,
+    path: `/v1/user/pins/${pinId}`,
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Token': token,
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    console.log(`Timeline API response: ${res.statusCode}`);
+  });
+
+  req.on('error', (e) => {
+    console.error(`Timeline API ERROR: ${e.message}`);
+  });
+
+  req.write(postData);
+  req.end();
+}
+
 function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
   console.log(`Attempting Discord webhook: ${senderName} -> ${recipientName}`);
   console.log(`Webhook URL: ${webhookUrl.substring(0, 50)}...`);
@@ -56,7 +97,7 @@ function sendDiscordWebhook(webhookUrl, senderName, recipientName) {
 }
 
 app.post('/api/register', (req, res) => {
-  const { linkCode, name, webhookUrl, oldName } = req.body;
+  const { linkCode, name, webhookUrl, oldName, timelineToken } = req.body;
   
   console.log('=== REGISTER REQUEST ===');
   console.log(`linkCode: ${linkCode}`);
@@ -74,6 +115,8 @@ app.post('/api/register', (req, res) => {
     connections[linkCode] = {
       name1: name,
       name2: null,
+      token1: timelineToken || null,
+      token2: null,
       webhookUrl: webhookUrl || null,
       pendingPings: [],
       jumbledDistance: null  // NEW: Store jumbled distance
@@ -87,11 +130,13 @@ app.post('/api/register', (req, res) => {
       // Update name1 if it matches oldName
       if (conn.name1 === oldName) {
         conn.name1 = name;
+        conn.token1 = timelineToken || conn.token1;
         console.log(`Updated name1 from ${oldName} to ${name}`);
       }
       // Update name2 if it matches oldName
       if (conn.name2 === oldName) {
         conn.name2 = name;
+        conn.token2 = timelineToken || conn.token2;
         console.log(`Updated name2 from ${oldName} to ${name}`);
       }
     }
@@ -111,9 +156,12 @@ app.post('/api/register', (req, res) => {
         // New partner joining
         if (!conn.name2) {
           conn.name2 = name;
+          conn.token2 = timelineToken;
           console.log(`Partner joined: ${name}`);
         } else {
           console.log(`Connection full, but allowing re-registration`);
+          if (conn.name1 === name) conn.token1 = timelineToken;
+          else if (conn.name2 === name) conn.token2 = timelineToken;
         }
       } else {
         console.log(`User ${name} re-registered`);
@@ -156,11 +204,14 @@ app.post('/api/ping', (req, res) => {
   }
   
   let partnerName = null;
+  let partnerToken = null;
   
   if (conn.name1 === senderName) {
     partnerName = conn.name2;
+    partnerToken = conn.token2;
   } else if (conn.name2 === senderName) {
     partnerName = conn.name1;
+    partnerToken = conn.token1;
   }
   
   if (partnerName) {
@@ -173,6 +224,11 @@ app.post('/api/ping', (req, res) => {
     });
     console.log('Added to pendingPings' + (jumbledCoords ? ' with location data' : ''));
     
+    // Send Timeline Pin (Vibrating Bracelet mode)
+    if (partnerToken) {
+      pushTimelinePin(partnerToken, senderName);
+    }
+
     // Send Discord after 10 second delay as failsafe
     if (conn.webhookUrl) {
       setTimeout(() => {

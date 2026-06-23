@@ -220,28 +220,43 @@ app.get('/api/check', (req, res) => {
   const hasPing = myPings.length > 0;
   
   if (hasPing) {
-    console.log(`[CHECK] Recipient: ${recipientName} | Delivering: ${myPings.length} pings`);
+    console.log(`[CHECK] Recipient: ${recipientName} | Pending: ${myPings.length} pings (not yet cleared)`);
   }
 
-  // NEW: Include jumbled coordinates if available
   let jumbledCoords = null;
   if (hasPing && myPings[0].jumbledCoords) {
     jumbledCoords = myPings[0].jumbledCoords;
-    console.log('Returning ping with location data');
   }
   
-  if (hasPing) {
-    connections[linkCode].pendingPings = connections[linkCode].pendingPings.filter(ping => 
-      !ping.recipientName || ping.recipientName.trim().toLowerCase() !== rName
-    );
-    console.log(`[CLEARED] Removed ${myPings.length} pings for ${recipientName}.`);
-  }
-  
+  // NOTE: pings are NOT cleared here anymore — cleared only after watch ACKs via /api/clear
   res.json({ 
     hasPing,
     pingCount: myPings.length,
     jumbledCoords: jumbledCoords
   });
+});
+
+// Clear pings only after watch has ACKed receipt
+app.post('/api/clear', (req, res) => {
+  const { linkCode, recipientName } = req.body;
+
+  if (!linkCode || !recipientName) {
+    return res.status(400).json({ error: 'Link code and recipient name are required' });
+  }
+
+  if (!connections[linkCode]) {
+    return res.json({ success: true, cleared: 0 });
+  }
+
+  const rName = recipientName.trim().toLowerCase();
+  const before = connections[linkCode].pendingPings.length;
+  connections[linkCode].pendingPings = connections[linkCode].pendingPings.filter(ping =>
+    !ping.recipientName || ping.recipientName.trim().toLowerCase() !== rName
+  );
+  const cleared = before - connections[linkCode].pendingPings.length;
+  console.log(`[CLEARED] Removed ${cleared} pings for ${recipientName} after watch ACK.`);
+
+  res.json({ success: true, cleared });
 });
 
 // NEW: Store jumbled distance

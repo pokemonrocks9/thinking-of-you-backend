@@ -178,7 +178,7 @@ app.post('/api/ping', (req, res) => {
       timestamp: Date.now(),
       jumbledCoords: jumbledCoords || null  // NEW: Store jumbled coordinates
     });
-    console.log('Added to pendingPings' + (jumbledCoords ? ' with location data' : ''));
+    console.log(`Added to pendingPings. Current count: ${conn.pendingPings.length}` + (jumbledCoords ? ' with location data' : ''));
     
     // Debounce Discord webhook: only send one notification for a spam burst
     if (conn.webhookUrl) {

@@ -76,7 +76,8 @@ app.post('/api/register', (req, res) => {
       name2: null,
       webhookUrl: webhookUrl || null,
       pendingPings: [],
-      jumbledDistance: null  // NEW: Store jumbled distance
+      jumbledDistance: null,
+      webhookTimeout: null
     };
     console.log(`Created new connection for ${name}`);
   } else {
@@ -128,9 +129,15 @@ app.post('/api/register', (req, res) => {
   
   console.log(`Connection state: name1=${connections[linkCode].name1}, name2=${connections[linkCode].name2}, webhook=${connections[linkCode].webhookUrl ? 'SET' : 'NOT SET'}`);
   
+  const conn = connections[linkCode];
+  let partnerName = null;
+  if (conn.name1 && conn.name1 !== name) partnerName = conn.name1;
+  else if (conn.name2 && conn.name2 !== name) partnerName = conn.name2;
+
   res.json({ 
     success: true,
-    connected: connections[linkCode].name2 !== null
+    connected: connections[linkCode].name2 !== null,
+    partnerName: partnerName
   });
 });
 
@@ -173,11 +180,12 @@ app.post('/api/ping', (req, res) => {
     });
     console.log('Added to pendingPings' + (jumbledCoords ? ' with location data' : ''));
     
-    // Send Discord after 10 second delay as failsafe
+    // Debounce Discord webhook: only send one notification for a spam burst
     if (conn.webhookUrl) {
-      setTimeout(() => {
+      if (conn.webhookTimeout) clearTimeout(conn.webhookTimeout);
+      conn.webhookTimeout = setTimeout(() => {
         sendDiscordWebhook(conn.webhookUrl, senderName, partnerName);
-        console.log('Discord failsafe sent after delay');
+        conn.webhookTimeout = null;
       }, 10000);
     }
   }
@@ -217,7 +225,8 @@ app.get('/api/check', (req, res) => {
   
   res.json({ 
     hasPing,
-    jumbledCoords: jumbledCoords  // NEW: Return jumbled coordinates
+    pingCount: myPings.length,
+    jumbledCoords: jumbledCoords
   });
 });
 

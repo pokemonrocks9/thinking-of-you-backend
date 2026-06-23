@@ -163,11 +163,16 @@ app.post('/api/ping', (req, res) => {
   }
   
   let partnerName = null;
-  
-  if (conn.name1 === senderName) {
+  const sName = senderName.trim().toLowerCase();
+  const n1 = conn.name1.trim().toLowerCase();
+  const n2 = conn.name2 ? conn.name2.trim().toLowerCase() : null;
+
+  if (n1 === sName) {
     partnerName = conn.name2;
-  } else if (conn.name2 === senderName) {
+  } else if (n2 === sName) {
     partnerName = conn.name1;
+  } else {
+    console.log(`⚠️ PING REJECTED: Sender "${senderName}" doesn't match connection names ("${conn.name1}"/"${conn.name2}")`);
   }
   
   if (partnerName) {
@@ -178,7 +183,10 @@ app.post('/api/ping', (req, res) => {
       timestamp: Date.now(),
       jumbledCoords: jumbledCoords || null  // NEW: Store jumbled coordinates
     });
-    console.log(`Added to pendingPings. Current count: ${conn.pendingPings.length}` + (jumbledCoords ? ' with location data' : ''));
+    
+    // Log the specific count for the recipient
+    const recipientPings = conn.pendingPings.filter(p => p.recipientName === partnerName);
+    console.log(`[LOVE SENT] linkCode: ${linkCode} | ${senderName} -> ${partnerName} | Count: ${recipientPings.length}${jumbledCoords ? ' (with GPS)' : ''}`);
     
     // Debounce Discord webhook: only send one notification for a spam burst
     if (conn.webhookUrl) {
@@ -204,12 +212,17 @@ app.get('/api/check', (req, res) => {
     return res.json({ hasPing: false });
   }
   
-  const myPings = connections[linkCode].pendingPings.filter(
-    ping => ping.recipientName === recipientName
+  const rName = recipientName.trim().toLowerCase();
+  const myPings = connections[linkCode].pendingPings.filter(ping => 
+    ping.recipientName && ping.recipientName.trim().toLowerCase() === rName
   );
   
   const hasPing = myPings.length > 0;
   
+  if (hasPing) {
+    console.log(`[CHECK] Recipient: ${recipientName} | Delivering: ${myPings.length} pings`);
+  }
+
   // NEW: Include jumbled coordinates if available
   let jumbledCoords = null;
   if (hasPing && myPings[0].jumbledCoords) {
@@ -218,9 +231,10 @@ app.get('/api/check', (req, res) => {
   }
   
   if (hasPing) {
-    connections[linkCode].pendingPings = connections[linkCode].pendingPings.filter(
-      ping => ping.recipientName !== recipientName
+    connections[linkCode].pendingPings = connections[linkCode].pendingPings.filter(ping => 
+      !ping.recipientName || ping.recipientName.trim().toLowerCase() !== rName
     );
+    console.log(`[CLEARED] Removed ${myPings.length} pings for ${recipientName}.`);
   }
   
   res.json({ 

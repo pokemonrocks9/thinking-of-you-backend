@@ -372,6 +372,28 @@ app.get('/api/whoIsRegistered', (req, res) => {
   });
 });
 
+// Location permission reporter — logs permission state per user for debugging
+app.post('/api/locationPermission', (req, res) => {
+  const { linkCode, name, permissionState, context, shareLocationSetting } = req.body;
+
+  console.log('=== LOCATION PERMISSION REPORT ===');
+  console.log(`linkCode: ${linkCode}`);
+  console.log(`name: ${name}`);
+  console.log(`permissionState: ${permissionState}`);
+  console.log(`context: ${context}`);
+  console.log(`shareLocation setting: ${shareLocationSetting}`);
+
+  if (permissionState === 'denied') {
+    console.log(`⚠️  LOCATION DENIED for ${name} — iOS may have revoked Pebble location access`);
+  } else if (permissionState === 'granted') {
+    console.log(`✓ Location granted for ${name}`);
+  } else {
+    console.log(`? Location state "${permissionState}" for ${name}`);
+  }
+
+  res.json({ success: true });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok',

@@ -201,6 +201,45 @@ app.post('/api/ping', (req, res) => {
   res.json({ success: true });
 });
 
+// Patches coords onto the sender's most recent pending ping.
+// Called when GPS resolves after the fast-ping has already been sent (iOS background case).
+app.post('/api/updateCoords', (req, res) => {
+  const { linkCode, senderName, jumbledCoords } = req.body;
+
+  console.log('=== UPDATE COORDS REQUEST ===');
+  console.log(`linkCode: ${linkCode}, senderName: ${senderName}`);
+  console.log(`jumbledCoords: ${jumbledCoords ? jumbledCoords.substring(0, 20) + '...' : 'NOT PROVIDED'}`);
+
+  if (!linkCode || !senderName || !jumbledCoords) {
+    return res.status(400).json({ error: 'linkCode, senderName, and jumbledCoords are required' });
+  }
+
+  if (!connections[linkCode]) {
+    return res.status(404).json({ error: 'Connection not found' });
+  }
+
+  const conn = connections[linkCode];
+  const sName = senderName.trim().toLowerCase();
+
+  // Find the most recent pending ping from this sender and patch in the coords
+  let patched = false;
+  for (var i = conn.pendingPings.length - 1; i >= 0; i--) {
+    if (conn.pendingPings[i].senderName.trim().toLowerCase() === sName) {
+      conn.pendingPings[i].jumbledCoords = jumbledCoords;
+      patched = true;
+      console.log(`✓ Patched coords onto ping[${i}] from ${senderName}`);
+      break;
+    }
+  }
+
+  if (!patched) {
+    // Ping was already cleared (ACKed by watch) — too late to patch, that's fine
+    console.log(`! No pending ping found for ${senderName} to patch (already cleared)`);
+  }
+
+  res.json({ success: true, patched });
+});
+
 app.get('/api/check', (req, res) => {
   const { linkCode, recipientName } = req.query;
   
